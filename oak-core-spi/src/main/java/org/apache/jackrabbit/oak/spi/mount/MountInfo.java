@@ -27,12 +27,12 @@ import java.util.NavigableSet;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.apache.jackrabbit.guava.common.collect.ImmutableSet;
 
 import static java.util.Objects.requireNonNull;
-import static org.apache.jackrabbit.guava.common.collect.Iterables.transform;
-import static org.apache.jackrabbit.guava.common.collect.Sets.newTreeSet;
+
 import static org.apache.jackrabbit.oak.commons.PathUtils.getParentPath;
 import static org.apache.jackrabbit.oak.commons.PathUtils.isAncestor;
 import static org.apache.jackrabbit.oak.spi.mount.FragmentMatcher.Result.FULL_MATCH;
@@ -43,14 +43,11 @@ import static org.apache.jackrabbit.oak.spi.mount.FragmentMatcher.Result.PARTIAL
  */
 public final class MountInfo implements Mount {
 
-    private static final Function<String, String> SANITIZE_PATH =  new Function<String, String>() {
-        @Override
-        public String apply(String input) {
-            if (input.endsWith("/") && input.length() > 1) {
-                return input.substring(0, input.length() - 1); 
-            }
-            return input;
+    private static final Function<String, String> SANITIZE_PATH = input -> {
+        if (input.endsWith("/") && input.length() > 1) {
+            return input.substring(0, input.length() - 1);
         }
+        return input;
     };
 
     private final String name;
@@ -140,7 +137,7 @@ public final class MountInfo implements Mount {
 
     private static TreeSet<String> cleanCopy(Collection<String> includedPaths) {
         // ensure that paths don't have trailing slashes - this triggers an assertion in PathUtils isAncestor
-        return newTreeSet(transform(includedPaths, SANITIZE_PATH::apply));
+        return includedPaths.stream().map(SANITIZE_PATH).collect(Collectors.toCollection(TreeSet::new));
     }
 
     public Set<String> getPathsSupportingFragments() {

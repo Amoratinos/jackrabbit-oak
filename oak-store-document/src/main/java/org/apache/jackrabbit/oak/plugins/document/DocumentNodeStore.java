@@ -20,7 +20,7 @@ import static org.apache.jackrabbit.guava.common.base.Preconditions.checkArgumen
 import static java.util.Objects.requireNonNull;
 import static org.apache.jackrabbit.guava.common.base.Preconditions.checkState;
 import static org.apache.jackrabbit.guava.common.collect.Iterables.partition;
-import static org.apache.jackrabbit.guava.common.collect.Iterables.transform;
+
 import static org.apache.jackrabbit.guava.common.collect.Lists.newArrayList;
 import static org.apache.jackrabbit.guava.common.collect.Lists.reverse;
 import static java.util.Collections.singletonList;
@@ -70,6 +70,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import javax.jcr.PropertyType;
 
@@ -1574,7 +1575,8 @@ public final class DocumentNodeStore
         }
 
         final RevisionVector readRevision = parent.getLastRevision();
-        return transform(getChildren(parent, name, limit).children, new Function<String, DocumentNodeState>() {
+        return getChildren(parent, name, limit).children.stream().map(
+                new Function<String, DocumentNodeState>() {
             @Override
             public DocumentNodeState apply(String input) {
                 Path p = new Path(parent.getPath(), input);
@@ -1617,7 +1619,7 @@ public final class DocumentNodeStore
                     return e.toString();
                 }
             }
-        }::apply);
+        }).collect(Collectors.toList());
     }
 
     @Nullable

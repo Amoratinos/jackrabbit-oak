@@ -39,10 +39,10 @@ import org.junit.Test;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.apache.jackrabbit.guava.common.collect.Iterables.cycle;
 import static org.apache.jackrabbit.guava.common.collect.Iterables.limit;
-import static org.apache.jackrabbit.guava.common.collect.Iterables.transform;
 
 import static java.lang.Long.MAX_VALUE;
 import static java.util.Arrays.asList;
@@ -223,7 +223,7 @@ public class CompositeChildrenCountTest {
                 Iterable<? extends ChildNodeEntry> childrenIterable = cycle(new MemoryChildNodeEntry("child", EMPTY_NODE));
                 return asCountingIterable(limit(childrenIterable, childrenCount == MAX_VALUE ? 1000 : (int) childrenCount));
             } else {
-                return asCountingIterable(transform(asList(children), input -> new MemoryChildNodeEntry(input, EMPTY_NODE)));
+                return asCountingIterable(asList(children).stream().map(input -> new MemoryChildNodeEntry(input, EMPTY_NODE)).collect(Collectors.toList()));
             }
         }
 

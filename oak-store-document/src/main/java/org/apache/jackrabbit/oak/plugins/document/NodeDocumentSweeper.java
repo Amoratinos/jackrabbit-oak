@@ -21,8 +21,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import org.apache.jackrabbit.oak.commons.TimeDurationFormatter;
+import org.apache.jackrabbit.oak.commons.collections.CollectionUtils;
 import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -32,7 +34,7 @@ import org.slf4j.LoggerFactory;
 import static java.util.Objects.requireNonNull;
 import static org.apache.jackrabbit.guava.common.collect.Iterables.filter;
 import static org.apache.jackrabbit.guava.common.collect.Iterables.partition;
-import static org.apache.jackrabbit.guava.common.collect.Iterables.transform;
+
 import static org.apache.jackrabbit.guava.common.collect.Maps.immutableEntry;
 
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.isDeletedEntry;
@@ -164,8 +166,8 @@ final class NodeDocumentSweeper {
 
     private Iterable<Map.Entry<Path, UpdateOp>> sweepOperations(
             final Iterable<NodeDocument> docs) {
-        return filter(transform(docs, doc -> immutableEntry(doc.getPath(), sweepOne(doc))),
-                input -> input.getValue() != null);
+        return CollectionUtils.toStream(docs).map(doc -> immutableEntry(doc.getPath(), sweepOne(doc)))
+                .filter(input -> input.getValue() != null).collect(Collectors.toList());
     }
 
     private UpdateOp sweepOne(NodeDocument doc) throws DocumentStoreException {

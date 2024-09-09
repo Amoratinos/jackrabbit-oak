@@ -19,7 +19,7 @@ package org.apache.jackrabbit.oak.plugins.document;
 import static java.util.Objects.requireNonNull;
 import static org.apache.jackrabbit.guava.common.collect.Iterables.filter;
 import static org.apache.jackrabbit.guava.common.collect.Iterables.partition;
-import static org.apache.jackrabbit.guava.common.collect.Iterables.transform;
+
 import static org.apache.jackrabbit.guava.common.collect.Maps.immutableEntry;
 
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.COMMITROOT_OR_REVISIONS;
@@ -32,8 +32,10 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.apache.jackrabbit.oak.commons.TimeDurationFormatter;
+import org.apache.jackrabbit.oak.commons.collections.CollectionUtils;
 import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -136,7 +138,7 @@ final class MissingBcSweeper2 {
 
     private Iterable<Map.Entry<Path, UpdateOp>> sweepOperations(
             final Iterable<NodeDocument> docs) {
-        return filter(transform(docs,
+        return CollectionUtils.toStream(docs).map(
                 new Function<NodeDocument, Map.Entry<Path, UpdateOp>>() {
 
             int yieldCnt = 0;
@@ -159,8 +161,8 @@ final class MissingBcSweeper2 {
                     yieldCnt = 0;
                 }
                 return immutableEntry(doc.getPath(), sweepOne(doc));
-            }
-        }::apply), input -> input.getValue() != null);
+            }}
+        ).filter(input -> input.getValue() != null).collect(Collectors.toList());
     }
 
     private UpdateOp sweepOne(NodeDocument doc) throws DocumentStoreException {

@@ -19,7 +19,7 @@
 package org.apache.jackrabbit.oak.plugins.document;
 
 import static org.apache.jackrabbit.guava.common.collect.Iterables.filter;
-import static org.apache.jackrabbit.guava.common.collect.Iterables.transform;
+
 import static org.apache.jackrabbit.guava.common.collect.Lists.newArrayList;
 import static org.apache.jackrabbit.guava.common.collect.Maps.filterKeys;
 import static java.util.Collections.singletonList;
@@ -40,11 +40,13 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import org.apache.jackrabbit.guava.common.collect.Iterables;
 import org.apache.jackrabbit.guava.common.collect.Sets;
 
 import org.apache.jackrabbit.oak.commons.TimeDurationFormatter;
+import org.apache.jackrabbit.oak.commons.collections.CollectionUtils;
 import org.apache.jackrabbit.oak.plugins.document.bundlor.DocumentBundlor;
 import org.apache.jackrabbit.oak.plugins.document.cache.CacheInvalidationStats;
 import org.apache.jackrabbit.oak.plugins.document.util.MapFactory;
@@ -285,8 +287,8 @@ public class LastRevRecoveryAgent {
             // make sure recovery does not run on stale cache
             // invalidate all suspects (OAK-9908)
             log.info("Starting cache invalidation before sweep...");
-            CacheInvalidationStats stats = store.invalidateCache(
-                    transform(suspects, Document::getId));
+            CacheInvalidationStats stats = store
+                    .invalidateCache(CollectionUtils.toStream(suspects).map(Document::getId).collect(Collectors.toList()));
             log.info("Invalidation stats: {}", stats);
             sweeper.sweep(suspects, new NodeDocumentSweepListener() {
                 @Override

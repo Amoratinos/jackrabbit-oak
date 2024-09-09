@@ -16,7 +16,7 @@
  */
 package org.apache.jackrabbit.oak.run;
 
-import static org.apache.jackrabbit.guava.common.collect.Iterables.transform;
+
 import static org.apache.commons.io.FileUtils.byteCountToDisplaySize;
 import static org.apache.jackrabbit.oak.api.Type.BINARIES;
 import static org.apache.jackrabbit.oak.api.Type.BINARY;

@@ -16,8 +16,6 @@
  */
 package org.apache.jackrabbit.oak.plugins.document.rdb;
 
-import static org.apache.jackrabbit.guava.common.collect.Iterables.transform;
-import static org.apache.jackrabbit.guava.common.collect.Sets.newHashSet;
 import static org.apache.jackrabbit.oak.plugins.document.rdb.RDBDocumentStore.CHAR2OCTETRATIO;
 import static org.apache.jackrabbit.oak.plugins.document.rdb.RDBDocumentStore.asBytes;
 import static org.apache.jackrabbit.oak.plugins.document.rdb.RDBJDBCTools.asDocumentStoreException;
@@ -430,7 +428,7 @@ public class RDBDocumentStoreJDBC {
     }
 
     private static <T extends Document> void assertNoDuplicatedIds(List<T> documents) {
-        if (newHashSet(transform(documents, input -> input.getId())).size() < documents.size()) {
+        if (documents.stream().map(input -> input.getId()).distinct().count() < documents.size()) {
             throw new IllegalArgumentException("There are duplicated ids in the document list");
         }
     }
