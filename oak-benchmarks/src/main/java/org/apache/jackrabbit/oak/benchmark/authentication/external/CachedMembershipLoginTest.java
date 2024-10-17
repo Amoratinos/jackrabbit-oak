@@ -20,6 +20,7 @@ import static javax.security.auth.login.AppConfigurationEntry.LoginModuleControl
 import static javax.security.auth.login.AppConfigurationEntry.LoginModuleControlFlag.SUFFICIENT;
 import static org.junit.Assert.assertEquals;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -31,46 +32,59 @@ import java.util.stream.StreamSupport;
 import javax.jcr.LoginException;
 import javax.jcr.Session;
 import javax.jcr.SimpleCredentials;
+import javax.jcr.ValueFactory;
 import javax.security.auth.login.AppConfigurationEntry;
 import javax.security.auth.login.Configuration;
 import org.apache.commons.lang3.reflect.FieldUtils;
+import org.apache.jackrabbit.api.JackrabbitSession;
+import org.apache.jackrabbit.api.security.user.Group;
+import org.apache.jackrabbit.api.security.user.UserManager;
 import org.apache.jackrabbit.guava.common.collect.ImmutableMap;
 import org.apache.jackrabbit.oak.jcr.delegate.SessionDelegate;
 import org.apache.jackrabbit.oak.security.authentication.token.TokenLoginModule;
 import org.apache.jackrabbit.oak.security.authentication.user.LoginModuleImpl;
+import org.apache.jackrabbit.oak.spi.security.ConfigurationParameters;
 import org.apache.jackrabbit.oak.spi.security.authentication.AuthenticationConfiguration;
 import org.apache.jackrabbit.oak.spi.security.authentication.GuestLoginModule;
+import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalGroup;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentityRef;
+import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalUser;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.impl.ExternalLoginModule;
-import org.apache.jackrabbit.oak.spi.security.authentication.external.impl.jmx.SyncMBeanImpl;
+import org.apache.jackrabbit.oak.spi.security.user.UserConfiguration;
+import org.apache.jackrabbit.oak.spi.xml.ImportBehavior;
+import org.apache.jackrabbit.oak.spi.xml.ProtectedItemImporter;
 import org.apache.jackrabbit.oak.stats.StatisticsProvider;
 import org.jetbrains.annotations.NotNull;
 
-//TODO Complete description
 /**
+ * Login against the {@link ExternalLoginModule} with a randomly selected user.
+ * Users are added to dynamic groups and depending on the received parameters can be added to local groups.
  *
  * Configuration options as defined in {@link AbstractExternalTest}.
  */
-public class ExternalMembershipLoginTest extends AbstractExternalTest {
+public class CachedMembershipLoginTest extends AbstractExternalTest {
 
     private final int numberOfUsers;
     private final int numberOfGroups;
     private final Reporter reporter;
-    StatisticsProvider statisticsProvider;
     private final List<String> auto;
+    private final int numberOfLocalGroups;
+    private final List<String> localGroups = new ArrayList<>();
 
+    StatisticsProvider statisticsProvider;
     private Set<String> uniques;
     private AtomicLong err;
 
-    public ExternalMembershipLoginTest(int numberOfUsers, int numberOfGroups, long expTime, boolean dynamicMembership,
+    public CachedMembershipLoginTest(int numberOfUsers, int numberOfGroups, long expTime, boolean dynamicMembership,
             @NotNull List<String> autoMembership, boolean report, @NotNull StatisticsProvider statsProvider,
-            long cacheExpiration) {
+            long cacheExpiration, int numberOfLocalGroups) {
         super(numberOfUsers, numberOfGroups, expTime, dynamicMembership, autoMembership, 0, cacheExpiration);
         this.numberOfUsers = numberOfUsers;
         this.numberOfGroups = numberOfGroups;
         this.reporter = new Reporter(report);
         this.statisticsProvider = statsProvider;
         this.auto = autoMembership;
+        this.numberOfLocalGroups = numberOfLocalGroups;
     }
 
     @Override
@@ -83,12 +97,34 @@ public class ExternalMembershipLoginTest extends AbstractExternalTest {
                 .getConfiguration(AuthenticationConfiguration.class);
         authenticationConfiguration.getMonitors(statisticsProvider);
 
-        SyncMBeanImpl syncMBean = new SyncMBeanImpl(getContentRepository(),getSecurityProvider(), syncManager, syncConfig.getName(),
-                idpManager,
-                idp.getName());
+        Session systemSession = null;
+        try {
+            systemSession = systemLogin();
+            UserManager userManager = ((JackrabbitSession) systemSession).getUserManager();
+            ValueFactory valueFactory = systemSession.getValueFactory();
 
-        syncMBean.syncAllExternalUsers();
+            Set<String> memberIds = new HashSet<>();
+            for (int i = 0; i < numberOfGroups; i++) {
+                ExternalGroup group = idp.getGroup("g" + i);
+                memberIds.add(group.getId());
+            }
 
+            for (int i = 0; i < numberOfUsers; i++) {
+                ExternalUser group = idp.getUser("g" + i);
+                memberIds.add(group.getId());
+            }
+
+            for (int groupIndex = 0; groupIndex < numberOfLocalGroups; groupIndex++) {
+                Group group = userManager.createGroup("localGroup" + groupIndex);
+                group.addMembers(memberIds.toArray(new String[0]));
+                localGroups.add(group.getID());
+            }
+            systemSession.save();
+        } finally {
+            if (systemSession != null) {
+                systemSession.logout();
+            }
+        }
     }
 
     @Override
@@ -116,14 +152,13 @@ public class ExternalMembershipLoginTest extends AbstractExternalTest {
         String id = getRandomUserId();
         Session s = null;
         try {
-            for (int i = 0; i < 5; i++) {
-                s = getRepository().login(new SimpleCredentials(id, new char[0]));
-                Set<String> principals = extractGroupPrincipals(s, id);
-                Set<String> expected = new TreeSet<>(StreamSupport.stream(idp.getDeclaredGroupRefs(id).spliterator(), false)
-                        .map(ExternalIdentityRef::getId).collect(Collectors.toSet()));
-                expected.addAll(auto);
-                assertEquals(expected, principals);
-            }
+            s = getRepository().login(new SimpleCredentials(id, new char[0]));
+            Set<String> principals = extractGroupPrincipals(s, id);
+            Set<String> expected = new TreeSet<>(StreamSupport.stream(idp.getDeclaredGroupRefs(id).spliterator(), false)
+                    .map(ExternalIdentityRef::getId).collect(Collectors.toSet()));
+            expected.addAll(auto);
+            expected.addAll(localGroups);
+            assertEquals(expected, principals);
         } catch (LoginException ex) {
             // ignore, will be reflected in the jmx stats
             err.incrementAndGet();
@@ -171,6 +206,19 @@ public class ExternalMembershipLoginTest extends AbstractExternalTest {
                 };
             }
         };
+    }
+
+    @Override
+    protected void expandSyncConfig() {
+        super.expandSyncConfig();
+        syncConfig.group().setDynamicGroups(syncConfig.user().getDynamicMembership());
+    }
+
+    @Override
+    protected ConfigurationParameters getSecurityConfiguration() {
+        return ConfigurationParameters.of(UserConfiguration.NAME,
+                ConfigurationParameters.of(ProtectedItemImporter.PARAM_IMPORT_BEHAVIOR, ImportBehavior.NAME_BESTEFFORT,
+                        "cacheExpiration", cacheExpiration));
     }
 
     private static class Reporter {

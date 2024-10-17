@@ -44,19 +44,6 @@
   <!-- Display information messages from oak-run check (oak-segment) -->
   <logger name="org.apache.jackrabbit.oak.plugins.segment.file.tooling.ConsistencyChecker" level="DEBUG"/>
 
-  <!-- TODO Delete the log!!!! -->
-  <appender name="FILE" class="ch.qos.logback.core.FileAppender">
-    <file>/Users/amoratinos/projects/deleteme/tests.log</file>
-    <encoder>
-      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{35} - %msg%n</pattern>
-    </encoder>
-  </appender>
-
-  <!-- Set the root logger level to OFF -->
-  <logger name="org.apache.jackrabbit.oak.security.user.CachedPrincipalMembershipReader" level="DEBUG" additivity="false">
-    <appender-ref ref="FILE"/>
-  </logger>
-
   <root level="warn">
     <appender-ref ref="STDERR" />
   </root>
