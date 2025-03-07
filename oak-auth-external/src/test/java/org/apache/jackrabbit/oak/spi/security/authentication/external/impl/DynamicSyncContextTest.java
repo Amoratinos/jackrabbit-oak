@@ -16,13 +16,6 @@
  */
 package org.apache.jackrabbit.oak.spi.security.authentication.external.impl;
 
-import java.util.HashSet;
-import java.util.Set;
-import java.util.UUID;
-import javax.jcr.RepositoryException;
-import javax.jcr.Value;
-import javax.jcr.ValueFactory;
-
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
@@ -39,9 +32,11 @@ import org.apache.jackrabbit.oak.spi.security.authentication.external.AbstractEx
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalGroup;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentity;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentityException;
+import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentityProvider;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentityRef;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalUser;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.SyncContext;
+import org.apache.jackrabbit.oak.spi.security.authentication.external.SyncException;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.SyncResult;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.SyncedIdentity;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.TestIdentityProvider;
@@ -51,6 +46,15 @@ import org.jetbrains.annotations.NotNull;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+
+import javax.jcr.RepositoryException;
+import javax.jcr.Value;
+import javax.jcr.ValueFactory;
+import java.util.HashSet;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.apache.jackrabbit.oak.spi.security.authentication.external.TestIdentityProvider.ID_SECOND_USER;
 import static org.apache.jackrabbit.oak.spi.security.authentication.external.TestIdentityProvider.ID_TEST_USER;
@@ -63,14 +67,21 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 public class DynamicSyncContextTest extends AbstractExternalAuthTest {
 
-    private Root r;
-    private UserManager userManager;
-    private ValueFactory valueFactory;
+    Root r;
+    UserManager userManager;
+    ValueFactory valueFactory;
 
-    private DynamicSyncContext syncContext;
+    DynamicSyncContext syncContext;
 
     @Before
     public void before() throws Exception {
@@ -139,9 +150,9 @@ public class DynamicSyncContextTest extends AbstractExternalAuthTest {
         }
     }
 
-    private static void assertSyncedMembership(@NotNull UserManager userManager,
-                                               @NotNull Authorizable a,
-                                               @NotNull ExternalIdentity externalIdentity) throws Exception {
+    static void assertSyncedMembership(@NotNull UserManager userManager,
+                                       @NotNull Authorizable a,
+                                       @NotNull ExternalIdentity externalIdentity) throws Exception {
         for (ExternalIdentityRef ref : externalIdentity.getDeclaredGroups()) {
             Group gr = userManager.getAuthorizable(ref.getId(), Group.class);
             assertNotNull(gr);
@@ -368,12 +379,12 @@ public class DynamicSyncContextTest extends AbstractExternalAuthTest {
 
         // sync user with modified membership => must be reflected
         // 1. empty set of declared groups
-        ExternalUser mod = new TestUserWithGroupRefs(externalUser, ImmutableSet.<ExternalIdentityRef>of());
+        ExternalUser mod = new TestUserWithGroupRefs(externalUser, ImmutableSet.of());
         syncContext.syncMembership(mod, a, nesting);
         assertDynamicMembership(a, mod, nesting);
 
-        // 2. set with different groups that defined on IDP
-        mod = new TestUserWithGroupRefs(externalUser, ImmutableSet.<ExternalIdentityRef>of(
+        // 2. set with different groups than defined on IDP
+        mod = new TestUserWithGroupRefs(externalUser, ImmutableSet.of(
                 idp.getGroup("a").getExternalId(),
                 idp.getGroup("aa").getExternalId(),
                 idp.getGroup("secondGroup").getExternalId()));
@@ -397,12 +408,12 @@ public class DynamicSyncContextTest extends AbstractExternalAuthTest {
 
         // sync user with modified membership => must be reflected
         // 1. empty set of declared groups
-        ExternalUser mod = new TestUserWithGroupRefs(externalUser, ImmutableSet.<ExternalIdentityRef>of());
+        ExternalUser mod = new TestUserWithGroupRefs(externalUser, ImmutableSet.of());
         syncContext.syncMembership(mod, a, nesting);
         assertSyncedMembership(userManager, a, mod);
 
         // 2. set with different groups that defined on IDP
-        mod = new TestUserWithGroupRefs(externalUser, ImmutableSet.<ExternalIdentityRef>of(
+        mod = new TestUserWithGroupRefs(externalUser, ImmutableSet.of(
                         idp.getGroup("a").getExternalId(),
                         idp.getGroup("aa").getExternalId(),
                         idp.getGroup("secondGroup").getExternalId()));
@@ -482,11 +493,11 @@ public class DynamicSyncContextTest extends AbstractExternalAuthTest {
         assertFalse(gr.isMember(u));
     }
 
-    private static final class TestUserWithGroupRefs extends TestIdentityProvider.TestIdentity implements ExternalUser {
+    static final class TestUserWithGroupRefs extends TestIdentityProvider.TestIdentity implements ExternalUser {
 
         private Iterable<ExternalIdentityRef> declaredGroupRefs;
 
-        private TestUserWithGroupRefs(@NotNull ExternalUser base, @NotNull Iterable<ExternalIdentityRef> declaredGroupRefs) {
+        TestUserWithGroupRefs(@NotNull ExternalUser base, @NotNull Iterable<ExternalIdentityRef> declaredGroupRefs) {
             super(base);
             this.declaredGroupRefs = declaredGroupRefs;
         }

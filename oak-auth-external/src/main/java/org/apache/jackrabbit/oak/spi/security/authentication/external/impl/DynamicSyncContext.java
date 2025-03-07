@@ -16,13 +16,6 @@
  */
 package org.apache.jackrabbit.oak.spi.security.authentication.external.impl;
 
-import java.util.HashSet;
-import java.util.Set;
-import javax.jcr.RepositoryException;
-import javax.jcr.Value;
-import javax.jcr.ValueFactory;
-
-import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
 import org.apache.jackrabbit.api.security.user.Authorizable;
 import org.apache.jackrabbit.api.security.user.Group;
@@ -43,6 +36,13 @@ import org.apache.jackrabbit.oak.spi.security.authentication.external.basic.Defa
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.jcr.RepositoryException;
+import javax.jcr.Value;
+import javax.jcr.ValueFactory;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
 
 /**
  * Extension of the {@code DefaultSyncContext} that doesn't synchronize group
@@ -115,8 +115,9 @@ public class DynamicSyncContext extends DefaultSyncContext {
             return;
         }
 
-        if (auth.hasProperty(REP_LAST_SYNCED) && !auth.hasProperty(ExternalIdentityConstants.REP_EXTERNAL_PRINCIPAL_NAMES)) {
-            // user has been synchronized before dynamic membership has been turned on
+        boolean groupsSyncedBefore = groupsSyncedBefore(auth);
+        if (groupsSyncedBefore && !config.user().getEnforceDynamicMembership()) {
+            // user has been synchronized before dynamic membership has been turned on and dynamic membership is not enforced
             super.syncMembership(external, auth, depth);
         } else {
             // retrieve membership of the given external user (up to the configured
@@ -132,6 +133,9 @@ public class DynamicSyncContext extends DefaultSyncContext {
                     vs = createValues(principalsNames);
                 }
                 auth.setProperty(ExternalIdentityConstants.REP_EXTERNAL_PRINCIPAL_NAMES, vs);
+                if (groupsSyncedBefore) {
+                    clearGroupMembership(auth);
+                }
             } catch (ExternalIdentityException e) {
                 log.error("Failed to synchronize membership information for external identity {}", external.getId(), e);
             }
@@ -156,7 +160,7 @@ public class DynamicSyncContext extends DefaultSyncContext {
      */
     private void collectPrincipalNames(@NotNull Set<String> principalNames, @NotNull Iterable<ExternalIdentityRef> declaredGroupIdRefs, long depth) throws ExternalIdentityException {
         boolean shortcut = (depth <= 1 && idp instanceof PrincipalNameResolver);
-        for (ExternalIdentityRef ref : Iterables.filter(declaredGroupIdRefs, externalIdentityRef -> isSameIDP(externalIdentityRef))) {
+        for (ExternalIdentityRef ref : Iterables.filter(declaredGroupIdRefs, this::isSameIDP)) {
             if (shortcut) {
                 principalNames.add(((PrincipalNameResolver) idp).fromExternalIdentityRef(ref));
             } else {
@@ -173,5 +177,22 @@ public class DynamicSyncContext extends DefaultSyncContext {
                 }
             }
         }
+    }
+    
+    private void clearGroupMembership(@NotNull Authorizable authorizable) throws RepositoryException {
+        Iterator<Group> grpIter = authorizable.declaredMemberOf();
+        while (grpIter.hasNext()) {
+            Group grp = grpIter.next();
+            if (isSameIDP(grp)) {
+                grp.removeMember(authorizable);
+                if (!grp.getDeclaredMembers().hasNext()) {
+                    grp.remove();
+                }
+            }
+        }
+    }
+    
+    private static boolean groupsSyncedBefore(@NotNull Authorizable authorizable) throws RepositoryException {
+        return authorizable.hasProperty(REP_LAST_SYNCED) && !authorizable.hasProperty(ExternalIdentityConstants.REP_EXTERNAL_PRINCIPAL_NAMES);
     }
 }

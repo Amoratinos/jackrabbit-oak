@@ -28,12 +28,14 @@ import org.jetbrains.annotations.NotNull;
  * the {@link org.apache.jackrabbit.oak.spi.security.authentication.external.impl.DefaultSyncHandler}.
  */
 public class DefaultSyncConfig {
+    
+    public static final String DEFAULT_NAME = "default";
 
     private final User user = new User();
 
     private final Group group = new Group();
 
-    private String name = "default";
+    private String name = DEFAULT_NAME;
 
     /**
      * Configures the name of this configuration
@@ -228,6 +230,8 @@ public class DefaultSyncConfig {
         private long membershipNestingDepth;
 
         private boolean dynamicMembership;
+        
+        private boolean enforceDynamicMembership;
 
         private boolean disableMissing;
 
@@ -294,7 +298,7 @@ public class DefaultSyncConfig {
         }
 
         /**
-         * Enable or disable the dynamic group membership. If turned external
+         * Enable or disable the dynamic group membership. If turned on external
          * identities and their group membership will be synchronized such that the
          * membership information is generated dynamically. External groups may
          * or may not be synchronized into the repository if this option is turned
@@ -311,6 +315,29 @@ public class DefaultSyncConfig {
             return this;
         }
 
+        /**
+         * Returns {@code true} if a dynamic group membership must be enforced for users that have been synchronized
+         * previously. Note that this option has no effect if {@link #getDynamicMembership()} returns {@code false}.
+         *
+         * @return {@code true} if dynamic group membership for external user identities must be enforced for previously 
+         * synced users; {@code false} otherwise. This option only takes effect if {@link #getDynamicMembership()} is enabled.
+         */
+        public boolean getEnforceDynamicMembership() {
+            return enforceDynamicMembership;
+        }
+
+        /**
+         * Enable or disable the enforcement of dynamic group membership.
+         *
+         * @param enforceDynamicMembership Boolean flag to define if dynamic group management is enforced for previously synced users. 
+         * @return {@code this}
+         * @see #getEnforceDynamicMembership() () for details.
+         */
+        public User setEnforceDynamicMembership(boolean enforceDynamicMembership) {
+            this.enforceDynamicMembership = enforceDynamicMembership;
+            return this;
+        }
+        
         /**
          * Controls the behavior for users that no longer exist on the external provider. The default is to delete the repository users
          * if they no longer exist on the external provider. If set to true, they will be disabled instead, and re-enabled once they appear
