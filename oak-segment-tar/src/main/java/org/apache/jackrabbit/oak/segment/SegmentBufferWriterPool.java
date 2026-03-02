@@ -36,7 +36,9 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
 
-import org.apache.jackrabbit.guava.common.util.concurrent.Monitor;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
+
 import org.apache.jackrabbit.oak.commons.conditions.Validate;
 import org.apache.jackrabbit.oak.segment.spi.persistence.GCGeneration;
 import org.jetbrains.annotations.NotNull;
@@ -167,11 +169,17 @@ public abstract class SegmentBufferWriterPool implements WriteOperationHandler {
 
     private static class GlobalSegmentBufferWriterPool extends SegmentBufferWriterPool {
         /**
-         * Monitor protecting the state of this pool. Neither of {@link #writers},
+         * Lock protecting the state of this pool. Neither of {@link #writers},
          * {@link #borrowed} and {@link #disposed} must be modified without owning
-         * this monitor.
+         * this lock.
          */
-        private final Monitor poolMonitor = new Monitor(true);
+        private final ReentrantLock poolLock = new ReentrantLock(true);
+
+        /**
+         * Condition signalled when a writer is returned to the pool,
+         * used to wait until all borrowed writers have been disposed.
+         */
+        private final Condition writerReturned = poolLock.newCondition();
 
         /**
          * Pool of current writers that are not in use
@@ -213,7 +221,7 @@ public abstract class SegmentBufferWriterPool implements WriteOperationHandler {
             List<SegmentBufferWriter> toFlush = new ArrayList<>();
             List<SegmentBufferWriter> toReturn = new ArrayList<>();
 
-            poolMonitor.enter();
+            poolLock.lock();
             try {
                 // Collect all writers that are not currently in use and clear
                 // the list so they won't get re-used anymore.
@@ -225,23 +233,23 @@ public abstract class SegmentBufferWriterPool implements WriteOperationHandler {
                 toReturn.addAll(borrowed);
                 borrowed.clear();
             } finally {
-                poolMonitor.leave();
+                poolLock.unlock();
             }
 
             // Wait for the return of the borrowed writers. This is the
             // case once all of them appear in the disposed set.
-            if (safeEnterWhen(poolMonitor, allReturned(toReturn))) {
+            if (safeAwaitAllReturned(toReturn)) {
                 try {
                     // Collect all disposed writers and clear the list to mark them
                     // as flushed.
                     toFlush.addAll(toReturn);
                     disposed.removeAll(toReturn);
                 } finally {
-                    poolMonitor.leave();
+                    poolLock.unlock();
                 }
             }
 
-            // Call flush from outside the pool monitor to avoid potential
+            // Call flush from outside the pool lock to avoid potential
             // deadlocks of that method calling SegmentStore.writeSegment
             for (SegmentBufferWriter writer : toFlush) {
                 writer.flush(store);
@@ -249,31 +257,20 @@ public abstract class SegmentBufferWriterPool implements WriteOperationHandler {
         }
 
         /**
-         * Create a {@code Guard} that is satisfied if and only if {@link #disposed}
-         * contains all items in {@code toReturn}
+         * Acquires the lock and waits until {@link #disposed} contains all items
+         * in {@code toReturn}. On success, returns {@code true} with the lock
+         * still held (caller must unlock). On interruption, sets the thread's
+         * interrupted flag and returns {@code false} without holding the lock.
          */
-        @NotNull
-        private Monitor.Guard allReturned(final List<SegmentBufferWriter> toReturn) {
-            return new Monitor.Guard(poolMonitor) {
-
-                @Override
-                public boolean isSatisfied() {
-                    return disposed.containsAll(toReturn);
-                }
-
-            };
-        }
-
-        /**
-         * Same as {@code monitor.enterWhen(guard)} but copes with that pesky {@code
-         * InterruptedException} by catching it and setting this thread's
-         * interrupted flag.
-         */
-        private static boolean safeEnterWhen(Monitor monitor, Monitor.Guard guard) {
+        private boolean safeAwaitAllReturned(final List<SegmentBufferWriter> toReturn) {
+            poolLock.lock();
             try {
-                monitor.enterWhen(guard);
+                while (!disposed.containsAll(toReturn)) {
+                    writerReturned.await();
+                }
                 return true;
             } catch (InterruptedException ignore) {
+                poolLock.unlock();
                 currentThread().interrupt();
                 return false;
             }
@@ -286,7 +283,7 @@ public abstract class SegmentBufferWriterPool implements WriteOperationHandler {
          */
         @NotNull
         private SegmentBufferWriter borrowWriter(@NotNull Object key, @NotNull GCGeneration gcGeneration) {
-            poolMonitor.enter();
+            poolLock.lock();
             try {
                 SegmentBufferWriter writer = writers.remove(key);
                 if (writer == null) {
@@ -295,7 +292,7 @@ public abstract class SegmentBufferWriterPool implements WriteOperationHandler {
                 borrowed.add(writer);
                 return writer;
             } finally {
-                poolMonitor.leave();
+                poolLock.unlock();
             }
         }
 
@@ -304,16 +301,17 @@ public abstract class SegmentBufferWriterPool implements WriteOperationHandler {
          * it.
          */
         private void returnWriter(Object key, SegmentBufferWriter writer) {
-            poolMonitor.enter();
+            poolLock.lock();
             try {
                 if (borrowed.remove(writer)) {
                     Validate.checkState(writers.put(key, writer) == null);
                 } else {
                     // Defer flush this writer as it was borrowed while flush() was called.
                     disposed.add(writer);
+                    writerReturned.signalAll();
                 }
             } finally {
-                poolMonitor.leave();
+                poolLock.unlock();
             }
         }
     }

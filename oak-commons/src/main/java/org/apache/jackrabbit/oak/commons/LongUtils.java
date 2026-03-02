@@ -28,10 +28,10 @@ public final class LongUtils {
      * signed long arithmetic, in which case {@link Long#MAX_VALUE} will be
      * returned instead of the result.
      *
-     * Note: this method is a variant of {@link org.apache.jackrabbit.guava.common.math.LongMath#checkedAdd(long, long)}
+     * Note: this method is a variant of {@link Math#addExact(long, long)}
      * that returns {@link Long#MAX_VALUE} instead of throwing {@code ArithmeticException}.
      *
-     * @see org.apache.jackrabbit.guava.common.math.LongMath#checkedAdd(long, long)
+     * @see Math#addExact(long, long)
      */
     public static long safeAdd(long a, long b) {
         long result = a + b;
@@ -92,7 +92,7 @@ public final class LongUtils {
      * in Guava. This version is hardcoded to only support radix 10.
      * <p>
      *
-     * @see org.apache.jackrabbit.guava.common.primitives.Longs#tryParse(String)
+     * @see Long#parseLong(String)
      */
     public static Long tryParse(String string) {
         if (string == null || string.isEmpty()) {
